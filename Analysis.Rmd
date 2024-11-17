@@ -1,0 +1,195 @@
+---
+title: "Visual Processing & Food Liking"
+author: "Reza Arabi Zanjani & Ali G. Mahdipour"
+date: '2022-08-22'
+output: pdf_document
+---
+
+## calling packages
+``` {r calling}
+library(tidyverse)
+library(dplyr)
+library(readxl)
+library(writexl)
+library(MVN)
+```
+
+## importing data
+
+```{r undefined message=FALSE, warning=FALSE}
+data.et <- read_excel("./Data/Data_ET_22.0.8.22.xlsx")
+
+data.et$AOI[data.et$AOI == "UnHealthy Food"] <- "photo"
+
+validity <- read.csv("./Data/Validity.csv")
+
+data.q <- read_excel("./Data/questionnaire.xlsx")
+
+data.q$sub_id <- as.numeric(data.q$sub_id)
+
+data.q[,c("name", "phone", "dateS", "dateE")] <- NULL
+
+data.et <- left_join(data.et, data.q, by = "sub_id")
+
+data.et$accuracy <- validity[match(data.et$Recording, validity$Recording),]$accuracy
+
+data.et$precisionSD <- validity[match(data.et$Recording, validity$Recording),]$precisionSD
+
+data.et$precisionRMS <- validity[match(data.et$Recording, validity$Recording),]$precisionRMS
+
+data.et$validityPerc <- validity[match(data.et$Recording, validity$Recording),]$validityPerc
+
+data.et <- data.et[,c(1, 2, 3 ,101, 102, 103, 104, 4:100)]
+
+data.et.f <- data.et %>% 
+  filter(AOI != "Rectangle") %>%
+  filter(AOI != "Rectangle 1") %>%
+  filter(PostType != "HealthyFood,Dummy,UnhealthyFood") %>%
+  filter(AOI != "Id & Picture of Account") %>%
+  filter(Timeline == "Timeline1") %>%
+  filter(AOI != "Rectangle 2") %>%
+  filter(PostType != "Dummy") %>%
+  filter(PostType != "HealthyFood,Dummy") %>%
+  filter(PostType != "Dummy,UnhealthyFood") %>%
+  filter(TOI != "HF") %>% 
+  filter(accuracy < mean(validity$accuracy) +
+           1.5 * sd(validity$accuracy)) %>%
+  filter(precisionRMS < mean(validity$precisionRMS) +
+           1.5 * sd(validity$precisionRMS)) %>%
+  filter(validityPerc > mean(validity$validityPerc) -
+           1.5 * sd(validity$validityPerc))
+```
+
+
+# preparing data
+
+```{r}
+mdp <- data.frame(sub_id = data.et.f$sub_id)
+mdp$SNh <- as.numeric(unlist(data.et.f[,72])) +  as.numeric(unlist(data.et.f[,74])) + 
+  as.numeric(unlist(data.et.f[,76])) + as.numeric(unlist(data.et.f[,94])) + as.numeric(unlist(data.et.f[,95])) + as.numeric(unlist(data.et.f[,96])) +
+  as.numeric(unlist(data.et.f[,97])) + as.numeric(unlist(data.et.f[,104]))
+
+mdp$PBCh <- as.numeric(unlist(data.et.f[,98])) + as.numeric(unlist(data.et.f[,99])) + as.numeric(unlist(data.et.f[,100]))
+
+mdp$Ah <- as.numeric(unlist(data.et.f[,80])) + as.numeric(unlist(data.et.f[,81])) + as.numeric(unlist(data.et.f[,82])) + as.numeric(unlist(data.et.f[,103]))
+
+mdp$SNuh <- as.numeric(unlist(data.et.f[,71])) +  as.numeric(unlist(data.et.f[,73])) + 
+  as.numeric(unlist(data.et.f[,75])) + as.numeric(unlist(data.et.f[,83])) + as.numeric(unlist(data.et.f[,84])) + as.numeric(unlist(data.et.f[,85])) +
+  as.numeric(unlist(data.et.f[,86])) + as.numeric(unlist(data.et.f[,92]))
+
+mdp$PBCuh <- as.numeric(unlist(data.et.f[, 87])) + as.numeric(unlist(data.et.f[, 88])) + as.numeric(unlist(data.et.f[, 89]))
+
+mdp$Auh <- as.numeric(unlist(data.et.f[, 77])) + as.numeric(unlist(data.et.f[, 78])) + as.numeric(unlist(data.et.f[, 79])) + as.numeric(unlist(data.et.f[, 93]))
+
+mdp$Ih <- as.numeric(unlist(data.et.f[, 102]))
+
+mdp$Iuh <- as.numeric(unlist(data.et.f[, 91]))
+
+mdp$SN <- mdp$SNh - mdp$SNuh
+
+mdp$PBC <- mdp$PBCh - mdp$PBCuh
+
+mdp$A <- mdp$Ah - mdp$Auh
+
+mdp$I <- mdp$Ih - mdp$Iuh
+
+mdp$trial_id <- rep(rep(c(1:20), each = 5), n_distinct(mdp$sub_id))
+
+mdp$NoMC <- data.et.f$Number_of_mouse_clicks
+mdp$AOI <- data.et.f$AOI
+
+current.choice <- NA
+choice <- NA
+mdp$choice <- NA
+
+choice <- ifelse(mdp$AOI == "like" & mdp$NoMC == 1, "like",
+                      ifelse(mdp$AOI == "Skip" & mdp$NoMC == 1, "skip", "NA"))
+mdp$choice <- choice
+
+for (img in 1:as.integer(dim(mdp)[1]/5)){
+  s = img*5 - 4
+  e = img*5
+  if ("like" %in% mdp$choice[s:e]){
+    cc = "like"
+  } else if ("skip" %in% mdp$choice[s:e]){
+    cc = "skip"
+  } else {
+    cc = "NA"
+  }
+  mdp$choice[s:e] <- rep(cc, 5)
+}
+
+mdp$FD <- data.et.f$Average_duration_of_fixations
+mdp$FC <- data.et.f$Number_of_fixations
+mdp$TFD <- data.et.f$Total_duration_of_fixations
+mdp$TfFFMC <- data.et.f$Time_from_first_fixation_to_mouse_click
+mdp$age <- data.et.f$age 
+mdp$gender <- data.et.f$gender
+mdp$TtES <- data.et.f$Time_to_entry_saccade
+
+
+
+```
+
+
+# GLM
+
+```{r}
+
+
+model1 <- glm(Ih ~ (Ah + SNh + PBCh)*TFD, mdp, family = gaussian())
+model2 <- glm(Iuh ~ (Auh + SNuh + PBCuh)*TFD, mdp, family = gaussian())
+model3 <- glm(Ih ~ (A + SN + PBC)*TFD, mdp, family = gaussian())
+
+summary(model1)
+summary(model2)
+summary(model3)
+
+mdp2$choice <- ifelse(mdp$choice == "like", 1, 
+                      ifelse(mdp$choice == "skip", 0,
+                             ifelse(mdp$choice == "NA", -1, -3))) 
+mdp2 <- subset(mdp2, mdp2$choice != -1)
+
+
+model4 <- glm(choice ~ Ih*TFD, mdp2, family = gaussian())
+model5 <- glm(choice ~ Iuh*TFD, mdp2, family = gaussian())
+model6 <- glm(choice ~ I*TFD, mdp2, family = gaussian())
+
+summary(model4)
+summary(model5)
+summary(model6)
+```
+
+
+# reprex
+
+## creating data
+
+``` {r creating_reprex_data}
+Data_reprex <- data.frame(sub_id = c(1:30),
+                          Ab = sample(1:10, 30, replace = TRUE),
+                          sn = sample(1:10, 30, replace = TRUE),
+                          pbc = sample(1:10, 30, replace = TRUE),
+                          att1 = rnorm(30, 350, 150),
+                          att2 = rnorm(30, 2, 0.5),
+                          att3 = rnorm(30, 1500, 500),
+                          int = sample(1:10, 30, replace = TRUE),
+                          b = sample(c("like", "next"), 30, 
+                                     replace = TRUE)
+                          )
+```
+
+## multivariate normality
+
+```{r}
+
+data("iris")
+
+setosa <- iris[1:50, 1:4]
+
+
+mvn(data = iris, subset = "Species" ,mvnTest = "mardia")
+
+rm(iris)
+```
+
